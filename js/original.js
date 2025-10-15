@@ -1251,11 +1251,14 @@
          */
         async function openClientDetails(clientId) {
             try {
+                // Obtiene el rol del usuario para mostrar botones de anular según corresponda
+                await fetchUserRole();
                 const client = clients.find(c => c.id === clientId);
                 if (!client) {
                     showToast('Cliente no encontrado.');
                     return;
                 }
+                // Actualiza el título del modal con el nombre del cliente
                 const titleEl = document.getElementById('client-details-title');
                 if (titleEl) {
                     titleEl.textContent = `Detalles de ${client.nombre}`;
@@ -1263,6 +1266,7 @@
                 const bodyEl = document.getElementById('client-details-body');
                 if (!bodyEl) return;
                 bodyEl.innerHTML = '<p class="text-sm text-text-secondary">Cargando ventas...</p>';
+                // Obtiene todas las ventas del cliente
                 const { data: sales, error: salesError } = await supabaseClient
                     .from('ventas')
                     .select('id, created_at, total_usd, exchange_rate, saldo_restante')
@@ -1273,119 +1277,145 @@
                     bodyEl.innerHTML = `<p class="text-red-600">Error al cargar ventas: ${salesError.message}</p>`;
                     return;
                 }
-                let html = '';
                 if (!sales || sales.length === 0) {
-                    html = '<p class="text-center text-text-secondary">Este cliente no tiene ventas registradas.</p>';
-                } else {
-                    for (const sale of sales) {
-                        // Cargar items con detalle de productos
-                        const { data: items, error: itemsError } = await supabaseClient
-                            .from('venta_items')
-                            .select('quantity, price, producto_id, productos(name, is_service, stock)')
-                            .eq('venta_id', sale.id);
-                        if (itemsError) {
-                            console.error(itemsError);
-                        }
-                        // Cargar pagos asociados a esta venta
-                        const { data: payments, error: payErr } = await supabaseClient
-                            .from('credit_payments')
-                            .select('*')
-                            .eq('venta_id', sale.id)
-                            .order('fecha_pago', { ascending: true });
-                        if (payErr) {
-                            console.error(payErr);
-                        }
-                        const rate = sale.exchange_rate || window.exchangeRate;
-                        let itemsRows = '';
-                        let totalItemsUSD = 0;
-                        let totalItemsBs = 0;
-                        (items || []).forEach(item => {
-                            const productName = item.productos ? item.productos.name : (allProducts.find(p => p.id === item.producto_id)?.name || 'Producto');
-                            const priceUSD = item.price;
-                            const priceBs = priceUSD * rate;
-                            const subUSD = priceUSD * item.quantity;
-                            const subBs = subUSD * rate;
-                            totalItemsUSD += subUSD;
-                            totalItemsBs += subBs;
-                            itemsRows += `
-                                <tr>
-                                    <td>${productName}</td>
-                                    <td class="text-right">${item.quantity}</td>
-                                    <td class="text-right">${formatCurrency(priceUSD)}</td>
-                                    <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
-                                    <td class="text-right">${formatCurrency(subUSD)}</td>
-                                    <td class="text-right">${formatCurrency(subBs, 'BS')}</td>
-                                </tr>
-                            `;
-                        });
-                        let paymentsHtml = '';
-                        let totalPaidUSD = 0;
-                        let totalPaidBs = 0;
-                        (payments || []).forEach(pay => {
-                            totalPaidUSD += pay.monto_pagado;
-                            totalPaidBs += pay.monto_pagado * rate;
-                            const date = new Date(pay.fecha_pago).toLocaleString('es-VE');
-                            paymentsHtml += `<li>${date}: ${formatCurrency(pay.monto_pagado)} / ${formatCurrency(pay.monto_pagado * rate, 'BS')}</li>`;
-                        });
-                        const saldoBs = sale.saldo_restante * rate;
-                        // Muestra el botón de anular solamente a administradores.  userRole se gestiona mediante fetchUserRole().
-                        const canDelete = (userRole === 'admin');
-                        const deleteBtn = canDelete ? `<button data-sale-id="${sale.id}" data-client-id="${clientId}" class="delete-sale-btn btn btn-danger text-xs ml-2">Anular</button>` : '';
-                        html += `
-                            <div class="border border-border-color rounded-lg p-4 shadow-sm">
-                                <div class="flex justify-between items-center">
-                                    <div>
-                                        <h4 class="font-semibold text-lg">Venta del ${new Date(sale.created_at).toLocaleString('es-VE')}</h4>
-                                        <p class="text-sm text-text-secondary">Total: ${formatCurrency(sale.total_usd)} / ${formatCurrency(sale.total_usd * rate, 'BS')}</p>
-                                    </div>
-                                    <div>
-                                        ${deleteBtn}
-                                    </div>
+                    bodyEl.innerHTML = '<p class="text-center text-text-secondary">Este cliente no tiene ventas registradas.</p>';
+                    openModal('client-details-modal');
+                    return;
+                }
+                // Construye las tarjetas de ventas con su estado y HTML generado
+                const salesWithHtml = [];
+                for (const sale of sales) {
+                    // Cargar items con detalle de productos
+                    const { data: items, error: itemsError } = await supabaseClient
+                        .from('venta_items')
+                        .select('quantity, price, producto_id, productos(name, is_service, stock)')
+                        .eq('venta_id', sale.id);
+                    if (itemsError) {
+                        console.error(itemsError);
+                    }
+                    // Cargar pagos asociados a esta venta
+                    const { data: payments, error: payErr } = await supabaseClient
+                        .from('credit_payments')
+                        .select('*')
+                        .eq('venta_id', sale.id)
+                        .order('fecha_pago', { ascending: true });
+                    if (payErr) {
+                        console.error(payErr);
+                    }
+                    const rate = sale.exchange_rate || window.exchangeRate;
+                    let itemsRows = '';
+                    let totalItemsUSD = 0;
+                    let totalItemsBs = 0;
+                    (items || []).forEach(item => {
+                        const productName = item.productos ? item.productos.name : (allProducts.find(p => p.id === item.producto_id)?.name || 'Producto');
+                        const priceUSD = item.price;
+                        const priceBs = priceUSD * rate;
+                        const subUSD = priceUSD * item.quantity;
+                        const subBs = subUSD * rate;
+                        totalItemsUSD += subUSD;
+                        totalItemsBs += subBs;
+                        itemsRows += `
+                            <tr>
+                                <td>${productName}</td>
+                                <td class="text-right">${item.quantity}</td>
+                                <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
+                                <td class="text-right">${formatCurrency(subUSD)}</td>
+                                <td class="text-right">${formatCurrency(subBs, 'BS')}</td>
+                            </tr>
+                        `;
+                    });
+                    let paymentsHtml = '';
+                    let totalPaidUSD = 0;
+                    let totalPaidBs = 0;
+                    (payments || []).forEach(pay => {
+                        totalPaidUSD += pay.monto_pagado;
+                        totalPaidBs += pay.monto_pagado * rate;
+                        const date = new Date(pay.fecha_pago).toLocaleString('es-VE');
+                        paymentsHtml += `<li>${date}: ${formatCurrency(pay.monto_pagado)} / ${formatCurrency(pay.monto_pagado * rate, 'BS')}</li>`;
+                    });
+                    const saldoBs = sale.saldo_restante * rate;
+                    const status = (sale.saldo_restante && sale.saldo_restante > 0) ? 'pending' : 'paid';
+                    const canDelete = (userRole === 'admin');
+                    const deleteBtn = canDelete ? `<button data-sale-id="${sale.id}" data-client-id="${clientId}" class="delete-sale-btn btn btn-danger text-xs ml-2">Anular</button>` : '';
+                    const saleHtml = `
+                        <div class="border border-border-color rounded-lg p-4 shadow-sm">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h4 class="font-semibold text-lg">Venta del ${new Date(sale.created_at).toLocaleString('es-VE')}</h4>
+                                    <p class="text-sm text-text-secondary">Total: ${formatCurrency(sale.total_usd)} / ${formatCurrency(sale.total_usd * rate, 'BS')}</p>
                                 </div>
-                                <div class="mt-3">
-                                    <p class="font-semibold">Productos:</p>
-                                    <div class="overflow-x-auto">
-                                        <table class="w-full text-sm border-collapse mt-1">
-                                            <thead>
-                                                <tr>
-                                                    <th>Producto</th>
-                                                    <th class="text-right">Cant.</th>
-                                                    <th class="text-right">Precio USD</th>
-                                                    <th class="text-right">Precio Bs</th>
-                                                    <th class="text-right">Subtotal USD</th>
-                                                    <th class="text-right">Subtotal Bs</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${itemsRows}
-                                                <tr class="total-row">
-                                                    <td colspan="4">Subtotal</td>
-                                                    <td class="text-right">${formatCurrency(totalItemsUSD)}</td>
-                                                    <td class="text-right">${formatCurrency(totalItemsBs, 'BS')}</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                <div class="mt-3">
-                                    <p class="font-semibold">Pagos:</p>
-                                    ${(paymentsHtml || totalPaidUSD > 0) ? `<ul class="list-disc pl-5 text-sm">${paymentsHtml}</ul>` : '<p class="text-sm text-text-secondary">No hay pagos registrados.</p>'}
-                                    <p class="mt-1"><strong>Pagado:</strong> ${formatCurrency(totalPaidUSD)} / ${formatCurrency(totalPaidBs, 'BS')}</p>
-                                    <p><strong>Saldo restante:</strong> ${formatCurrency(sale.saldo_restante)} / ${formatCurrency(saldoBs, 'BS')}</p>
+                                <div>
+                                    ${deleteBtn}
                                 </div>
                             </div>
-                        `;
-                    }
+                            <div class="mt-3">
+                                <p class="font-semibold">Productos:</p>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm border-collapse mt-1">
+                                        <thead>
+                                            <tr>
+                                                <th>Producto</th>
+                                                <th class="text-right">Cant.</th>
+                                                <th class="text-right">Precio USD</th>
+                                                <th class="text-right">Precio Bs</th>
+                                                <th class="text-right">Subtotal USD</th>
+                                                <th class="text-right">Subtotal Bs</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${itemsRows}
+                                            <tr class="total-row">
+                                                <td colspan="4">Subtotal</td>
+                                                <td class="text-right">${formatCurrency(totalItemsUSD)}</td>
+                                                <td class="text-right">${formatCurrency(totalItemsBs, 'BS')}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <p class="font-semibold">Pagos:</p>
+                                ${(paymentsHtml || totalPaidUSD > 0) ? `<ul class="list-disc pl-5 text-sm">${paymentsHtml}</ul>` : '<p class="text-sm text-text-secondary">No hay pagos registrados.</p>'}
+                                <p class="mt-1"><strong>Pagado:</strong> ${formatCurrency(totalPaidUSD)} / ${formatCurrency(totalPaidBs, 'BS')}</p>
+                                <p><strong>Saldo restante:</strong> ${formatCurrency(sale.saldo_restante)} / ${formatCurrency(saldoBs, 'BS')}</p>
+                            </div>
+                        </div>
+                    `;
+                    salesWithHtml.push({ status, html: saleHtml });
                 }
-                bodyEl.innerHTML = html;
-                // Asigna eventos a los botones de anular, si existen
-                bodyEl.querySelectorAll('.delete-sale-btn').forEach(btn => {
-                    btn.addEventListener('click', async e => {
-                        const saleId = e.currentTarget.dataset.saleId;
-                        const cId = e.currentTarget.dataset.clientId;
-                        await deleteSale(saleId, cId);
+                // Función para renderizar ventas según filtro seleccionado
+                const renderClientSales = (filter = 'all') => {
+                    let rendered = '';
+                    salesWithHtml.forEach(entry => {
+                        if (filter === 'all' || entry.status === filter) {
+                            rendered += entry.html;
+                        }
                     });
-                });
+                    if (!rendered) {
+                        rendered = '<p class="text-center text-text-secondary">No hay ventas que coincidan con el filtro.</p>';
+                    }
+                    bodyEl.innerHTML = rendered;
+                    // Asigna eventos para anular
+                    bodyEl.querySelectorAll('.delete-sale-btn').forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            const saleId = e.currentTarget.dataset.saleId;
+                            const cId = e.currentTarget.dataset.clientId;
+                            await deleteSale(saleId, cId);
+                        });
+                    });
+                };
+                // Render inicial
+                renderClientSales('all');
+                // Asigna el selector de filtro
+                const filterSelect = document.getElementById('client-details-filter');
+                if (filterSelect) {
+                    filterSelect.onchange = null;
+                    filterSelect.addEventListener('change', e => {
+                        const val = e.target.value;
+                        renderClientSales(val);
+                    });
+                }
                 openModal('client-details-modal');
             } catch (err) {
                 console.error(err);
