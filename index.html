@@ -472,9 +472,17 @@
               contenido se genera dinámicamente desde original.js.
             -->
             <div class="p-6 rounded-lg shadow-xl w-full max-w-xl h-[90vh] flex flex-col">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 id="client-details-title" class="text-2xl font-bold">Detalles del Cliente</h3>
-                    <button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-2 sm:space-y-0">
+                    <div class="flex items-center space-x-2">
+                        <h3 id="client-details-title" class="text-2xl font-bold">Detalles del Cliente</h3>
+                        <!-- Filtro de estado de deudas: Todos, Pendientes o Pagadas -->
+                        <select id="client-details-filter" class="border border-gray-300 dark:border-gray-600 rounded-md text-sm px-2 py-1">
+                            <option value="all">Todas</option>
+                            <option value="pending">Pendientes</option>
+                            <option value="paid">Pagadas</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 self-end sm:self-auto">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
@@ -487,6 +495,43 @@
             </div>
         </div>
     </div>
+
+        <!-- Modal para seleccionar opciones del resumen de ventas -->
+        <div id="summary-options-modal" class="modal-content hidden">
+            <!-- Este modal permite al usuario seleccionar el rango de días y el tipo de pago antes de generar el resumen -->
+            <div class="p-6 rounded-lg shadow-xl w-full max-w-sm flex flex-col space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xl font-bold">Opciones de Resumen</h3>
+                    <button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div>
+                    <label for="summary-days" class="block text-sm mb-1">Período (días)</label>
+                    <select id="summary-days" class="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1">
+                        <option value="1">Último día</option>
+                        <option value="7">Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                        <option value="30">Últimos 30 días</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="summary-payment-filter" class="block text-sm mb-1">Filtrar por método de pago</label>
+                    <select id="summary-payment-filter" class="w-full border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1">
+                        <option value="">Todos</option>
+                        <option value="efectivo_usd">Efectivo USD</option>
+                        <option value="efectivo_bs">Efectivo Bs</option>
+                        <option value="zelle">Zelle</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="pago_movil">Pago Móvil</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" class="btn-close-modal btn btn-secondary">Cancelar</button>
+                    <button id="confirm-summary-options-btn" class="btn btn-primary">Generar Resumen</button>
+                </div>
+            </div>
+        </div>
     
     <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 max-w-md text-center">
          <p id="toast-message"></p>

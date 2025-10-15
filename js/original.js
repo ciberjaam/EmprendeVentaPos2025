@@ -1481,6 +1481,35 @@
         }
 
         /**
+         * Abre el modal de opciones de resumen de ventas, permitiendo
+         * seleccionar el periodo y el filtro de método de pago. Al
+         * confirmar se llama a exportSalesSummaryCustom() con los valores
+         * seleccionados.
+         */
+        function openSummaryOptionsModal() {
+            const daysSelect = document.getElementById('summary-days');
+            const paymentSelect = document.getElementById('summary-payment-filter');
+            const confirmBtn = document.getElementById('confirm-summary-options-btn');
+            if (!daysSelect || !paymentSelect || !confirmBtn) {
+                // Si el modal no existe, se utiliza la versión con prompts
+                exportSalesSummaryCustom();
+                return;
+            }
+            // establece valores por defecto
+            daysSelect.value = '1';
+            paymentSelect.value = '';
+            // Elimina eventos previos para evitar duplicados
+            confirmBtn.onclick = null;
+            confirmBtn.addEventListener('click', () => {
+                const days = parseInt(daysSelect.value, 10);
+                const payFilter = paymentSelect.value || '';
+                closeModal(); // cierra el modal activo
+                exportSalesSummaryCustom(days, payFilter);
+            });
+            openModal('summary-options-modal');
+        }
+
+        /**
          * Registra una venta a crédito.  Se inserta la venta con el saldo
          * restante igual al total, se insertan los items, se decrementa el
          * stock y se actualiza el saldo_pendiente del cliente.  Requiere que
@@ -1664,16 +1693,30 @@
         
         // Nueva versión de exportSalesSummary con rango de fechas (1, 7, 15 o 30 días) y filtro por método de pago.  Esta función utiliza prompts para solicitar parámetros al administrador.
         async function exportSalesSummaryCustom() {
+            // Esta función puede recibir parámetros opcionales (daysParam, paymentFilterParam)
+            // para evitar los prompts. Si no se proporcionan, se usarán prompts predeterminados.
+            const args = arguments;
             if (!session) { showToast('Debes iniciar sesión para ver el resumen.'); return; }
-            const daysInput = prompt('Mostrar ventas de los últimos días (elige 1, 7, 15 o 30):', '1');
-            if (daysInput === null) return;
-            let days = parseInt(daysInput, 10);
-            if (isNaN(days) || ![1, 7, 15, 30].includes(days)) {
-                days = 1;
+            let days, paymentFilter;
+            if (args.length > 0 && typeof args[0] !== 'undefined' && args[0] !== null) {
+                days = parseInt(args[0], 10);
             }
-            let paymentFilter = prompt('Filtrar por tipo de pago (opcional). Usa valores como "efectivo_usd", "efectivo_bs", "zelle", "tarjeta", "pago_movil". Deja vacío para incluir todos:', '');
-            if (paymentFilter === null) return;
-            paymentFilter = (paymentFilter || '').trim().toLowerCase();
+            if (args.length > 1 && typeof args[1] !== 'undefined' && args[1] !== null) {
+                paymentFilter = String(args[1]).trim().toLowerCase();
+            }
+            if (!days) {
+                const daysInput = prompt('Mostrar ventas de los últimos días (elige 1, 7, 15 o 30):', '1');
+                if (daysInput === null) return;
+                days = parseInt(daysInput, 10);
+                if (isNaN(days) || ![1, 7, 15, 30].includes(days)) {
+                    days = 1;
+                }
+            }
+            if (typeof paymentFilter === 'undefined') {
+                let pf = prompt('Filtrar por tipo de pago (opcional). Usa valores como "efectivo_usd", "efectivo_bs", "zelle", "tarjeta", "pago_movil". Deja vacío para incluir todos:', '');
+                if (pf === null) return;
+                paymentFilter = (pf || '').trim().toLowerCase();
+            }
             const startDate = new Date();
             startDate.setHours(0, 0, 0, 0);
             startDate.setDate(startDate.getDate() - (days - 1));
@@ -2415,7 +2458,7 @@
                 }
                 closeCartDrawer();
             });
-            document.getElementById('btn-summary').addEventListener('click', () => { exportSalesSummaryCustom(); closeCartDrawer(); });
+                document.getElementById('btn-summary').addEventListener('click', () => { openSummaryOptionsModal(); closeCartDrawer(); });
             // El botón de análisis de ventas ha sido eliminado porque no hay API de IA disponible.
             // Igualmente, se ha eliminado la generación de descripciones automática.
 
