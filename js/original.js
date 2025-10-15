@@ -1,5 +1,5 @@
 
-        const SUPABASE_URL = 'https://hzyybvrzottzapelpxed.supabase.co';
+        const SUPABASE_URL = 'https://dcpvasczyhfjthdxctax.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6eXlidnJ6b3R0emFwZWxweGVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDI5NDQsImV4cCI6MjA3NjA3ODk0NH0.cqKDFgRpSAnfkoby3nleLnK2AnrZ1gO59ayX14a6Si0';
         
         window.products = [
@@ -348,6 +348,13 @@
             if (summaryBtn) {
                 summaryBtn.classList.toggle('hidden', !isAdmin || !session);
                 summaryBtn.disabled = !session || !isAdmin;
+            }
+
+            // El botón de gestionar ventas sólo para administradores
+            const manageSalesBtn = document.getElementById('btn-manage-sales');
+            if (manageSalesBtn) {
+                manageSalesBtn.classList.toggle('hidden', !isAdmin || !session);
+                manageSalesBtn.disabled = !session || !isAdmin;
             }
         }
 
@@ -1510,6 +1517,114 @@
         }
 
         /**
+         * Abre el modal de gestión de ventas. Permite ver el historial de ventas,
+         * filtrar por método de pago y estado, y anular ventas desde un panel
+         * general. Sólo los administradores pueden anular ventas.
+         */
+        async function openSalesManagementModal() {
+            try {
+                await fetchUserRole();
+                // Referencias a elementos del modal
+                const tbody = document.getElementById('sales-management-body');
+                const paySelect = document.getElementById('sales-filter-payment');
+                const statusSelect = document.getElementById('sales-filter-status');
+                if (!tbody || !paySelect || !statusSelect) {
+                    showToast('No se encontró la interfaz de gestión de ventas.');
+                    return;
+                }
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">Cargando...</td></tr>';
+                // Obtener todas las ventas con el nombre del cliente mediante relación
+                const { data: sales, error } = await supabaseClient
+                    .from('ventas')
+                    .select('id, created_at, total_usd, exchange_rate, saldo_restante, payment_methods, cliente_id, clientes(nombre)')
+                    .order('created_at', { ascending: false });
+                if (error) {
+                    console.error(error);
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-red-600">Error al cargar ventas.</td></tr>';
+                    return;
+                }
+                if (!sales || sales.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">No hay ventas registradas.</td></tr>';
+                    openModal('sales-management-modal');
+                    return;
+                }
+                // Construir un arreglo de ventas con datos calculados
+                const allSales = sales.map(sale => {
+                    const rate = sale.exchange_rate || window.exchangeRate;
+                    const totalBs = (sale.total_usd || 0) * rate;
+                    const methods = sale.payment_methods ? Object.keys(sale.payment_methods).join(', ') : '';
+                    const status = (sale.saldo_restante && sale.saldo_restante > 0) ? 'pending' : 'paid';
+                    const clientName = sale.clientes ? sale.clientes.nombre : 'N/A';
+                    return {
+                        id: sale.id,
+                        date: new Date(sale.created_at).toLocaleString('es-VE'),
+                        totalUSD: sale.total_usd || 0,
+                        totalBs: totalBs,
+                        methods: methods,
+                        status: status,
+                        clientId: sale.cliente_id,
+                        clientName: clientName,
+                        saldoRestante: sale.saldo_restante || 0
+                    };
+                });
+                // Función para renderizar la tabla según filtros
+                const renderSalesTable = () => {
+                    const filterPay = (paySelect.value || '').toLowerCase();
+                    const filterStatus = statusSelect.value;
+                    let html = '';
+                    allSales.forEach(sale => {
+                        // Filtra por método de pago
+                        if (filterPay && !sale.methods.toLowerCase().includes(filterPay)) return;
+                        // Filtra por estado
+                        if (filterStatus !== 'all' && sale.status !== filterStatus) return;
+                        const statusLabel = sale.status === 'pending' ? 'Pendiente' : 'Pagada';
+                        const deleteButton = (userRole === 'admin') ? `<button data-sale-id="${sale.id}" data-client-id="${sale.clientId}" class="delete-sale-btn btn btn-danger btn-xs">Anular</button>` : '';
+                        html += `
+                            <tr>
+                                <td>${sale.date}</td>
+                                <td>${sale.clientName}</td>
+                                <td class="text-right">${formatCurrency(sale.totalUSD)}</td>
+                                <td class="text-right">${formatCurrency(sale.totalBs, 'BS')}</td>
+                                <td>${sale.methods || '-'}</td>
+                                <td>${statusLabel}</td>
+                                <td>${deleteButton}</td>
+                            </tr>
+                        `;
+                    });
+                    if (!html) {
+                        html = '<tr><td colspan="7" class="text-center py-4">No hay ventas que coincidan con el filtro.</td></tr>';
+                    }
+                    tbody.innerHTML = html;
+                    // Reasignar eventos a botones de anular
+                    tbody.querySelectorAll('.delete-sale-btn').forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            const saleId = e.currentTarget.dataset.saleId;
+                            const clientId = e.currentTarget.dataset.clientId;
+                            await deleteSale(saleId, clientId);
+                            // Después de anular la venta, quitarla de allSales y volver a renderizar
+                            const index = allSales.findIndex(s => s.id === saleId);
+                            if (index > -1) {
+                                allSales.splice(index, 1);
+                            }
+                            renderSalesTable();
+                        });
+                    });
+                };
+                // Asociar eventos a los selectores de filtro
+                paySelect.onchange = null;
+                statusSelect.onchange = null;
+                paySelect.addEventListener('change', renderSalesTable);
+                statusSelect.addEventListener('change', renderSalesTable);
+                // Abrir el modal y renderizar
+                openModal('sales-management-modal');
+                renderSalesTable();
+            } catch (err) {
+                console.error(err);
+                showToast('Error al gestionar ventas.');
+            }
+        }
+
+        /**
          * Registra una venta a crédito.  Se inserta la venta con el saldo
          * restante igual al total, se insertan los items, se decrementa el
          * stock y se actualiza el saldo_pendiente del cliente.  Requiere que
@@ -2079,6 +2194,12 @@
                         showToast('No se pudo guardar el cliente');
                     }
                 });
+            }
+
+            // Gestionar ventas
+            const btnManageSales = document.getElementById('btn-manage-sales');
+            if (btnManageSales) {
+                btnManageSales.addEventListener('click', openSalesManagementModal);
             }
 
             // Botón para abrir venta a crédito
