@@ -1,5 +1,5 @@
 
-        const SUPABASE_URL = 'https://dcpvasczyhfjthdxctax.supabase.co';
+        const SUPABASE_URL = 'https://hzyybvrzottzapelpxed.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6eXlidnJ6b3R0emFwZWxweGVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MDI5NDQsImV4cCI6MjA3NjA3ODk0NH0.cqKDFgRpSAnfkoby3nleLnK2AnrZ1gO59ayX14a6Si0';
         
         window.products = [
