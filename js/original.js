@@ -1388,7 +1388,7 @@
                 const renderClientSales = (filter = 'all') => {
                     let rendered = '';
                     salesWithHtml.forEach(entry => {
-                        if (filter === 'all' || entry.status === filter) {
+                        if (filter === 'all' || (filter === 'pending' && entry.status === 'pending') || (filter === 'paid' && entry.status === 'paid')) {
                             rendered += entry.html;
                         }
                     });
@@ -1562,6 +1562,8 @@
                     showToast('No se encontró la interfaz de gestión de ventas.');
                     return;
                 }
+                // Mostrar inmediatamente el modal para que el usuario vea la pantalla en lugar de un fondo difuminado sin contenido
+                openModal('sales-management-modal');
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">Cargando...</td></tr>';
                 // Obtener todas las ventas con el nombre del cliente mediante relación
                 const { data: sales, error } = await supabaseClient
@@ -1645,8 +1647,7 @@
                 statusSelect.onchange = null;
                 paySelect.addEventListener('change', renderSalesTable);
                 statusSelect.addEventListener('change', renderSalesTable);
-                // Abrir el modal y renderizar
-                openModal('sales-management-modal');
+                // Renderizar la tabla al finalizar la carga
                 renderSalesTable();
             } catch (err) {
                 console.error(err);
