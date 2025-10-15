@@ -333,12 +333,7 @@
                 manageSellersBtn.disabled = !session || !isAdmin;
             }
 
-            // Análisis de ventas sólo para administradores
-            const analyzeBtn = document.getElementById('btn-analyze-sales');
-            if (analyzeBtn) {
-                analyzeBtn.classList.toggle('hidden', !isAdmin);
-                analyzeBtn.disabled = !session || !isAdmin;
-            }
+            // El botón de análisis de ventas se ha eliminado, por lo que no es necesario alternar su visibilidad
 
             // Opciones de venta (finalizar venta y WhatsApp) accesibles para vendedores y administradores.
             ['btn-finalize', 'btn-wa'].forEach(id => {
@@ -855,7 +850,7 @@
             DOM.authIcon.classList.toggle('text-green-500', !!session);
             DOM.authIcon.innerHTML = session ? `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />` : `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />`;
             document.getElementById('logout-button').classList.toggle('hidden', locked);
-            ['btn-finalize', 'btn-wa', 'btn-summary', 'btn-manage-products', 'btn-analyze-sales'].forEach(id => {
+            ['btn-finalize', 'btn-wa', 'btn-summary', 'btn-manage-products'].forEach(id => {
                  const el = document.getElementById(id); if (el) el.disabled = locked;
             });
         }
@@ -1083,21 +1078,40 @@
          * clientes.  Cada cliente se muestra con su nombre, límite de
          * crédito, saldo pendiente y botones para editar y abonar.
          */
-        function renderClientsList() {
+        function renderClientsList(list = clients) {
             const container = document.getElementById('client-list-container');
             if (!container) return;
             container.innerHTML = '';
-            if (!clients || clients.length === 0) {
+            const source = list || [];
+            if (!source || source.length === 0) {
                 container.innerHTML = '<p class="text-text-secondary text-center p-4">No hay clientes.</p>';
                 return;
             }
-            clients.forEach(c => {
+            source.forEach(c => {
+                const saldoBs = (c.saldo_pendiente || 0) * window.exchangeRate;
                 const row = document.createElement('div');
                 row.className = 'flex justify-between items-center p-2 border-b border-border-color last:border-b-0 hover:bg-accent';
-                row.innerHTML = `<div><p class="font-semibold">${c.nombre}</p><p class="text-sm text-text-secondary">Límite: ${formatCurrency(c.limite_credito)} - Saldo: ${formatCurrency(c.saldo_pendiente)}</p></div><div class="flex gap-2"><button data-id="${c.id}" class="edit-client-btn btn btn-secondary text-xs">Editar</button><button data-id="${c.id}" class="pay-client-btn btn btn-primary text-xs">Abonar</button></div>`;
+                // Se añaden botones de ver detalles, editar y abonar.  El botón de
+                // detalles permite revisar todas las ventas a crédito y sus
+                // operaciones para este cliente.
+                row.innerHTML = `
+                    <div>
+                        <p class="font-semibold">${c.nombre}</p>
+                        <p class="text-sm text-text-secondary">Límite: ${formatCurrency(c.limite_credito)} - Saldo: ${formatCurrency(c.saldo_pendiente)} / ${formatCurrency(saldoBs, 'BS')}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button data-id="${c.id}" class="view-client-btn btn btn-secondary text-xs">Ver</button>
+                        <button data-id="${c.id}" class="edit-client-btn btn btn-secondary text-xs">Editar</button>
+                        <button data-id="${c.id}" class="pay-client-btn btn btn-primary text-xs">Abonar</button>
+                    </div>
+                `;
                 container.appendChild(row);
             });
-            // Add listeners for edit and payment buttons
+            // Añade listeners para ver, editar y abonar después de renderizar
+            container.querySelectorAll('.view-client-btn').forEach(btn => btn.addEventListener('click', e => {
+                const id = e.currentTarget.dataset.id;
+                openClientDetails(id);
+            }));
             container.querySelectorAll('.edit-client-btn').forEach(btn => btn.addEventListener('click', e => {
                 const id = e.currentTarget.dataset.id;
                 openClientForm(id);
@@ -1115,6 +1129,21 @@
         async function openClientsModal() {
             await fetchClients();
             renderClientsList();
+            // Configura el filtro de búsqueda de clientes
+            const searchInput = document.getElementById('client-search');
+            if (searchInput) {
+                searchInput.value = '';
+                // Asigna el manejador directamente para evitar duplicar eventos en cada apertura
+                searchInput.oninput = () => {
+                    const term = searchInput.value.toLowerCase();
+                    const filtered = clients.filter(c =>
+                        (c.nombre || '').toLowerCase().includes(term) ||
+                        (c.telefono || '').toLowerCase().includes(term) ||
+                        (c.email || '').toLowerCase().includes(term)
+                    );
+                    renderClientsList(filtered);
+                };
+            }
             openModal('clients-modal');
         }
 
@@ -1201,6 +1230,233 @@
             } catch (err) {
                 console.error(err);
                 showToast('Error al registrar el pago');
+            }
+        }
+
+        /**
+         * Abre un modal que muestra las ventas a crédito asociadas a un cliente
+         * específico. Incluye información detallada de cada venta (fecha,
+         * productos, subtotales en USD y Bs, pagos realizados y saldo
+         * restante) y permite anular la venta si fue registrada por error.
+         * Sólo los administradores pueden anular una venta.
+         *
+         * @param {string} clientId Identificador del cliente
+         */
+        async function openClientDetails(clientId) {
+            try {
+                const client = clients.find(c => c.id === clientId);
+                if (!client) {
+                    showToast('Cliente no encontrado.');
+                    return;
+                }
+                const titleEl = document.getElementById('client-details-title');
+                if (titleEl) {
+                    titleEl.textContent = `Detalles de ${client.nombre}`;
+                }
+                const bodyEl = document.getElementById('client-details-body');
+                if (!bodyEl) return;
+                bodyEl.innerHTML = '<p class="text-sm text-text-secondary">Cargando ventas...</p>';
+                const { data: sales, error: salesError } = await supabaseClient
+                    .from('ventas')
+                    .select('id, created_at, total_usd, exchange_rate, saldo_restante')
+                    .eq('cliente_id', clientId)
+                    .order('created_at', { ascending: false });
+                if (salesError) {
+                    console.error(salesError);
+                    bodyEl.innerHTML = `<p class="text-red-600">Error al cargar ventas: ${salesError.message}</p>`;
+                    return;
+                }
+                let html = '';
+                if (!sales || sales.length === 0) {
+                    html = '<p class="text-center text-text-secondary">Este cliente no tiene ventas registradas.</p>';
+                } else {
+                    for (const sale of sales) {
+                        // Cargar items con detalle de productos
+                        const { data: items, error: itemsError } = await supabaseClient
+                            .from('venta_items')
+                            .select('quantity, price, producto_id, productos(name, is_service, stock)')
+                            .eq('venta_id', sale.id);
+                        if (itemsError) {
+                            console.error(itemsError);
+                        }
+                        // Cargar pagos asociados a esta venta
+                        const { data: payments, error: payErr } = await supabaseClient
+                            .from('credit_payments')
+                            .select('*')
+                            .eq('venta_id', sale.id)
+                            .order('fecha_pago', { ascending: true });
+                        if (payErr) {
+                            console.error(payErr);
+                        }
+                        const rate = sale.exchange_rate || window.exchangeRate;
+                        let itemsRows = '';
+                        let totalItemsUSD = 0;
+                        let totalItemsBs = 0;
+                        (items || []).forEach(item => {
+                            const productName = item.productos ? item.productos.name : (allProducts.find(p => p.id === item.producto_id)?.name || 'Producto');
+                            const priceUSD = item.price;
+                            const priceBs = priceUSD * rate;
+                            const subUSD = priceUSD * item.quantity;
+                            const subBs = subUSD * rate;
+                            totalItemsUSD += subUSD;
+                            totalItemsBs += subBs;
+                            itemsRows += `
+                                <tr>
+                                    <td>${productName}</td>
+                                    <td class="text-right">${item.quantity}</td>
+                                    <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                    <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
+                                    <td class="text-right">${formatCurrency(subUSD)}</td>
+                                    <td class="text-right">${formatCurrency(subBs, 'BS')}</td>
+                                </tr>
+                            `;
+                        });
+                        let paymentsHtml = '';
+                        let totalPaidUSD = 0;
+                        let totalPaidBs = 0;
+                        (payments || []).forEach(pay => {
+                            totalPaidUSD += pay.monto_pagado;
+                            totalPaidBs += pay.monto_pagado * rate;
+                            const date = new Date(pay.fecha_pago).toLocaleString('es-VE');
+                            paymentsHtml += `<li>${date}: ${formatCurrency(pay.monto_pagado)} / ${formatCurrency(pay.monto_pagado * rate, 'BS')}</li>`;
+                        });
+                        const saldoBs = sale.saldo_restante * rate;
+                        // Muestra el botón de anular solamente a administradores.  userRole se gestiona mediante fetchUserRole().
+                        const canDelete = (userRole === 'admin');
+                        const deleteBtn = canDelete ? `<button data-sale-id="${sale.id}" data-client-id="${clientId}" class="delete-sale-btn btn btn-danger text-xs ml-2">Anular</button>` : '';
+                        html += `
+                            <div class="border border-border-color rounded-lg p-4 shadow-sm">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <h4 class="font-semibold text-lg">Venta del ${new Date(sale.created_at).toLocaleString('es-VE')}</h4>
+                                        <p class="text-sm text-text-secondary">Total: ${formatCurrency(sale.total_usd)} / ${formatCurrency(sale.total_usd * rate, 'BS')}</p>
+                                    </div>
+                                    <div>
+                                        ${deleteBtn}
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <p class="font-semibold">Productos:</p>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse mt-1">
+                                            <thead>
+                                                <tr>
+                                                    <th>Producto</th>
+                                                    <th class="text-right">Cant.</th>
+                                                    <th class="text-right">Precio USD</th>
+                                                    <th class="text-right">Precio Bs</th>
+                                                    <th class="text-right">Subtotal USD</th>
+                                                    <th class="text-right">Subtotal Bs</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${itemsRows}
+                                                <tr class="total-row">
+                                                    <td colspan="4">Subtotal</td>
+                                                    <td class="text-right">${formatCurrency(totalItemsUSD)}</td>
+                                                    <td class="text-right">${formatCurrency(totalItemsBs, 'BS')}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <p class="font-semibold">Pagos:</p>
+                                    ${(paymentsHtml || totalPaidUSD > 0) ? `<ul class="list-disc pl-5 text-sm">${paymentsHtml}</ul>` : '<p class="text-sm text-text-secondary">No hay pagos registrados.</p>'}
+                                    <p class="mt-1"><strong>Pagado:</strong> ${formatCurrency(totalPaidUSD)} / ${formatCurrency(totalPaidBs, 'BS')}</p>
+                                    <p><strong>Saldo restante:</strong> ${formatCurrency(sale.saldo_restante)} / ${formatCurrency(saldoBs, 'BS')}</p>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                bodyEl.innerHTML = html;
+                // Asigna eventos a los botones de anular, si existen
+                bodyEl.querySelectorAll('.delete-sale-btn').forEach(btn => {
+                    btn.addEventListener('click', async e => {
+                        const saleId = e.currentTarget.dataset.saleId;
+                        const cId = e.currentTarget.dataset.clientId;
+                        await deleteSale(saleId, cId);
+                    });
+                });
+                openModal('client-details-modal');
+            } catch (err) {
+                console.error(err);
+                showToast('Error al cargar los detalles del cliente.');
+            }
+        }
+
+        /**
+         * Anula una venta específica. Este proceso incrementa el stock de los
+         * productos (excepto servicios), actualiza el saldo pendiente del
+         * cliente y elimina la venta junto con sus items y pagos asociados.
+         * Sólo debe utilizarse por administradores para corregir errores.
+         *
+         * @param {string} saleId Identificador de la venta
+         * @param {string} clientId Identificador del cliente
+         */
+        async function deleteSale(saleId, clientId) {
+            try {
+                if (userRole !== 'admin') {
+                    showToast('Sólo los administradores pueden anular ventas.');
+                    return;
+                }
+                const confirmDelete = confirm('¿Seguro que deseas anular esta venta? Esta acción no se puede deshacer.');
+                if (!confirmDelete) return;
+                // Obtiene la venta y su saldo restante
+                const { data: sale, error: saleErr } = await supabaseClient
+                    .from('ventas')
+                    .select('id, saldo_restante')
+                    .eq('id', saleId)
+                    .single();
+                if (saleErr || !sale) {
+                    showToast('No se pudo encontrar la venta a anular.');
+                    return;
+                }
+                // Obtiene los items de la venta con información de productos
+                const { data: items, error: itemsErr } = await supabaseClient
+                    .from('venta_items')
+                    .select('producto_id, quantity, productos(is_service, stock)')
+                    .eq('venta_id', saleId);
+                if (itemsErr) {
+                    console.error(itemsErr);
+                    showToast('Error al obtener items de la venta.');
+                    return;
+                }
+                // Incrementa el stock de los productos no servicio
+                for (const it of items || []) {
+                    const isService = it.productos ? it.productos.is_service : (allProducts.find(p => p.id === it.producto_id)?.is_service);
+                    if (!isService) {
+                        let currentStock = it.productos ? it.productos.stock : null;
+                        if (currentStock === null || currentStock === undefined) {
+                            const { data: prod } = await supabaseClient.from('productos').select('stock').eq('id', it.producto_id).single();
+                            currentStock = prod ? prod.stock : 0;
+                        }
+                        const newStock = (currentStock || 0) + Number(it.quantity);
+                        await supabaseClient.from('productos').update({ stock: newStock }).eq('id', it.producto_id);
+                    }
+                }
+                // Actualiza el saldo pendiente del cliente restando el saldo_restante de la venta
+                if (clientId) {
+                    const client = clients.find(c => c.id === clientId);
+                    let nuevoSaldo = (client ? client.saldo_pendiente : 0) - (sale.saldo_restante || 0);
+                    if (nuevoSaldo < 0) nuevoSaldo = 0;
+                    await supabaseClient.from('clientes').update({ saldo_pendiente: nuevoSaldo }).eq('id', clientId);
+                }
+                // Elimina la venta (los items y pagos se eliminan por cascada)
+                await supabaseClient.from('ventas').delete().eq('id', saleId);
+                showToast('Venta anulada correctamente.');
+                // Recarga datos de clientes y detalles si están abiertos
+                await fetchClients();
+                if (document.getElementById('client-details-modal') && !document.getElementById('client-details-modal').classList.contains('hidden')) {
+                    await openClientDetails(clientId);
+                }
+                if (document.getElementById('clients-modal') && !document.getElementById('clients-modal').classList.contains('hidden')) {
+                    renderClientsList();
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Error al anular la venta.');
             }
         }
 
@@ -1323,21 +1579,29 @@
                 }
 
                 let totalDayUSD = 0;
+                let totalDayBs = 0;
                 let reportHtml = '';
-
+                // Para cada venta sumarizamos productos y calculamos valores en USD y Bs
                 sales.forEach(sale => {
                     totalDayUSD += sale.total_usd;
+                    const rate = sale.exchange_rate || window.exchangeRate;
+                    totalDayBs += sale.total_usd * rate;
                     (sale.venta_items || []).forEach(item => {
                         const productName = item.productos ? item.productos.name : 'Producto Eliminado';
-                        const subTotalUSD = item.quantity * item.price;
+                        const priceUSD = item.price;
+                        const priceBs = priceUSD * rate;
+                        const subTotalUSD = item.quantity * priceUSD;
+                        const subTotalBs = subTotalUSD * rate;
                         reportHtml += `
-                            <tr>
-                                <td>${new Date(sale.created_at).toLocaleTimeString('es-VE')}</td>
-                                <td>${productName}</td>
-                                <td class="text-right">${item.quantity}</td>
-                                <td class="text-right">${formatCurrency(item.price)}</td>
-                                <td class="text-right">${formatCurrency(subTotalUSD)}</td>
-                            </tr>
+                                <tr>
+                                    <td>${new Date(sale.created_at).toLocaleTimeString('es-VE')}</td>
+                                    <td>${productName}</td>
+                                    <td class="text-right">${item.quantity}</td>
+                                    <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                    <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
+                                    <td class="text-right">${formatCurrency(subTotalUSD)}</td>
+                                    <td class="text-right">${formatCurrency(subTotalBs, 'BS')}</td>
+                                </tr>
                         `;
                     });
                 });
@@ -1365,15 +1629,21 @@
                                     <th>Hora</th>
                                     <th>Producto</th>
                                     <th class="text-right">Cantidad</th>
-                                    <th class="text-right">Precio Unit.</th>
-                                    <th class="text-right">Subtotal</th>
+                                    <th class="text-right">Precio USD</th>
+                                    <th class="text-right">Precio Bs</th>
+                                    <th class="text-right">Subtotal USD</th>
+                                    <th class="text-right">Subtotal Bs</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${reportHtml}
                                 <tr class="total-row">
-                                    <td colspan="4">TOTAL DEL DÍA</td>
+                                    <td colspan="6">TOTAL DEL DÍA (USD)</td>
                                     <td class="text-right">${formatCurrency(totalDayUSD)}</td>
+                                </tr>
+                                <tr class="total-row">
+                                    <td colspan="6">TOTAL DEL DÍA (Bs)</td>
+                                    <td class="text-right">${formatCurrency(totalDayBs, 'BS')}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1436,19 +1706,27 @@
                     }
                 }
                 let totalUSD = 0;
+                let totalBs = 0;
                 let reportHtml = '';
                 filteredSales.forEach(sale => {
                     totalUSD += sale.total_usd;
+                    totalBs += sale.total_usd * (sale.exchange_rate || window.exchangeRate);
                     (sale.venta_items || []).forEach(item => {
                         const productName = item.productos ? item.productos.name : 'Producto Eliminado';
-                        const subTotalUSD = item.quantity * item.price;
+                        const priceUSD = item.price;
+                        const rate = sale.exchange_rate || window.exchangeRate;
+                        const priceBs = priceUSD * rate;
+                        const subTotalUSD = item.quantity * priceUSD;
+                        const subTotalBs = subTotalUSD * rate;
                         reportHtml += `
                             <tr>
                                 <td>${new Date(sale.created_at).toLocaleString('es-VE')}</td>
                                 <td>${productName}</td>
                                 <td class="text-right">${item.quantity}</td>
-                                <td class="text-right">${formatCurrency(item.price)}</td>
+                                <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
                                 <td class="text-right">${formatCurrency(subTotalUSD)}</td>
+                                <td class="text-right">${formatCurrency(subTotalBs, 'BS')}</td>
                             </tr>
                         `;
                     });
@@ -1476,18 +1754,24 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Fecha y Hora</th>
-                                    <th>Producto</th>
-                                    <th class="text-right">Cantidad</th>
-                                    <th class="text-right">Precio Unit.</th>
-                                    <th class="text-right">Subtotal</th>
+                                <th>Fecha y Hora</th>
+                                <th>Producto</th>
+                                <th class="text-right">Cantidad</th>
+                                <th class="text-right">Precio USD</th>
+                                <th class="text-right">Precio Bs</th>
+                                <th class="text-right">Subtotal USD</th>
+                                <th class="text-right">Subtotal Bs</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${reportHtml}
                                 <tr class="total-row">
-                                    <td colspan="4">TOTAL PERIODO</td>
+                                    <td colspan="6">TOTAL PERIODO (USD)</td>
                                     <td class="text-right">${formatCurrency(totalUSD)}</td>
+                                </tr>
+                                <tr class="total-row">
+                                    <td colspan="6">TOTAL PERIODO (Bs)</td>
+                                    <td class="text-right">${formatCurrency(totalBs, 'BS')}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -2132,19 +2416,8 @@
                 closeCartDrawer();
             });
             document.getElementById('btn-summary').addEventListener('click', () => { exportSalesSummaryCustom(); closeCartDrawer(); });
-            document.getElementById('btn-analyze-sales').addEventListener('click', () => { analyzeDailySales(); closeCartDrawer(); });
-
-            document.getElementById('generate-description-btn').addEventListener('click', async () => {
-                 const name = document.getElementById('product-name').value;
-                 if (!name) { showToast('Introduce un nombre de producto.'); return; }
-                 const prompt = `Genera una descripción corta y atractiva para un producto en un punto de venta.\n\nNombre: "${name}"\nCategoría: "${document.getElementById('product-category').value}"\n\nDescripción:`;
-                 const description = await callGemini(prompt);
-                 if (description) {
-                     document.getElementById('gemini-modal-content').innerHTML = `<p>${description.replace(/\n/g, '<br>')}</p>`;
-                     document.getElementById('gemini-modal-footer').innerHTML = `<button id="use-desc-btn" class="btn btn-primary mr-2">Usar</button><button class="btn-close-modal btn btn-secondary">Cerrar</button>`;
-                     document.getElementById('use-desc-btn').onclick = () => { document.getElementById('product-description').value = description; closeModal(); };
-                 }
-            });
+            // El botón de análisis de ventas ha sido eliminado porque no hay API de IA disponible.
+            // Igualmente, se ha eliminado la generación de descripciones automática.
 
             initializeApp();
         });

@@ -227,14 +227,18 @@
             </div>
             <div class="text-lg font-bold flex justify-between"><span>Total USD:</span><span id="cart-total-usd">$0.00</span></div>
             <div class="text-lg font-bold flex justify-between mb-4"><span>Total Bs:</span><span id="cart-total-bs">Bs 0.00</span></div>
-            <div class="grid grid-cols-2 gap-2">
-                <button id="btn-finalize" class="btn btn-primary w-full">Finalizar & Ticket</button>
-                <button id="btn-wa" class="btn btn-primary bg-green-500 hover:bg-green-600 w-full">WhatsApp</button>
-                <button id="btn-summary" class="btn btn-secondary">Resumen del día</button>
-                <button id="btn-analyze-sales" class="btn btn-secondary">✨ Analizar Ventas</button>
-            </div>
-            <!-- Botón para registrar una venta a crédito -->
-            <button id="btn-credit-sale" class="btn btn-secondary w-full mt-2">Venta a Crédito</button>
+                <!--
+                  Organiza los botones del carrito en una rejilla 2x2 para un acceso
+                  uniforme.  Ahora se incluyen las acciones de finalizar, venta a
+                  crédito, resumen y WhatsApp en una sola rejilla, eliminando
+                  botones sueltos y comentarios innecesarios.
+                -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-finalize" class="btn btn-primary w-full">Finalizar &amp; Ticket</button>
+                    <button id="btn-credit-sale" class="btn btn-secondary w-full">Venta a Crédito</button>
+                    <button id="btn-summary" class="btn btn-secondary w-full">Resumen del día</button>
+                    <button id="btn-wa" class="btn btn-primary bg-green-500 hover:bg-green-600 w-full">WhatsApp</button>
+                </div>
         </div>
     </aside>
 
@@ -302,7 +306,7 @@
                          <div><label for="product-unit" class="block text-sm font-medium">Unidad</label><input type="text" id="product-unit" value="Unidad" class="modal-input"></div>
                          <div class="md:col-span-2"><label for="product-image" class="block text-sm font-medium">URL de Imagen</label><input type="url" id="product-image" class="modal-input"></div>
                      </div>
-                     <div class="md:col-span-2"><label for="product-description" class="block text-sm font-medium">Descripción</label><div class="relative"><textarea id="product-description" rows="3" class="modal-input"></textarea><button type="button" id="generate-description-btn" class="absolute top-1 right-1 btn btn-secondary text-xs py-1 px-2">✨ Generar</button></div></div>
+                     <div class="md:col-span-2"><label for="product-description" class="block text-sm font-medium">Descripción</label><div class="relative"><textarea id="product-description" rows="3" class="modal-input"></textarea><!-- Botón de generación de descripción eliminado --></div></div>
                      <div class="grid grid-cols-2 gap-4"><label class="flex items-center space-x-2"><input type="checkbox" id="product-is_service" class="rounded"><span>Es servicio</span></label><label class="flex items-center space-x-2"><input type="checkbox" id="product-sold_by_weight" class="rounded"><span>Vendido por peso</span></label><label class="flex items-center space-x-2"><input type="checkbox" id="product-sold_by_length" class="rounded"><span>Vendido por metro</span></label><label class="flex items-center space-x-2"><input type="checkbox" id="product-allow_manual_price" class="rounded"><span>Precio manual</span></label></div>
                  </div>
                  <div class="mt-6 flex justify-between items-center">
@@ -343,6 +347,8 @@
             </div>
         </div>
         
+        <!-- El modal de Gemini y sus opciones han sido eliminados porque no se dispone de una API de IA -->
+        <!--
         <div id="gemini-modal" class="modal-content hidden">
              <div class="p-6 rounded-lg shadow-xl w-full max-w-lg h-[70vh] flex flex-col">
                  <div class="flex justify-between items-center mb-4"><h3 id="gemini-modal-title" class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-indigo-600">✨ Asistente de IA</h3><button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"><i class="fas fa-times"></i></button></div>
@@ -350,6 +356,7 @@
                  <div id="gemini-modal-footer" class="mt-4 text-right"><button type="button" class="btn-close-modal btn btn-secondary">Cerrar</button></div>
              </div>
         </div>
+        -->
 
         <!-- Modal para crear vendedores. Visible sólo para administradores. -->
         <div id="create-seller-modal" class="modal-content hidden">
@@ -394,6 +401,8 @@
                          <span class="hidden sm:inline">Nuevo</span>
                      </button>
                  </div>
+                 <!-- Campo de búsqueda para filtrar clientes -->
+                 <input type="text" id="client-search" placeholder="Buscar cliente" class="w-full p-2 mb-3 border border-border-color rounded-md text-sm" />
                  <div id="client-list-container" class="flex-grow overflow-y-auto space-y-2">
                      <!-- Lista de clientes se renderiza aquí -->
                  </div>
@@ -452,6 +461,30 @@
                      <button id="confirm-credit-sale-btn" class="btn btn-primary">Confirmar</button>
                  </div>
              </div>
+        </div>
+
+        <!-- Modal para ver el detalle de las operaciones de un cliente -->
+        <div id="client-details-modal" class="modal-content hidden">
+            <!--
+              Este modal muestra todas las ventas a crédito asociadas a un cliente,
+              junto con los productos, subtotales en USD y Bs, pagos registrados y
+              la opción de anular una venta si fue realizada por error.  El
+              contenido se genera dinámicamente desde original.js.
+            -->
+            <div class="p-6 rounded-lg shadow-xl w-full max-w-xl h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="client-details-title" class="text-2xl font-bold">Detalles del Cliente</h3>
+                    <button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="client-details-body" class="flex-grow overflow-y-auto space-y-4">
+                    <!-- Aquí se insertan las tarjetas de ventas por cliente -->
+                </div>
+                <div class="mt-4 text-right">
+                    <button type="button" class="btn-close-modal btn btn-secondary">Cerrar</button>
+                </div>
+            </div>
         </div>
     </div>
     
