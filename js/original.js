@@ -1099,9 +1099,13 @@
                 const saldoBs = (c.saldo_pendiente || 0) * window.exchangeRate;
                 const row = document.createElement('div');
                 row.className = 'flex justify-between items-center p-2 border-b border-border-color last:border-b-0 hover:bg-accent';
-                // Se añaden botones de ver detalles, editar y abonar.  El botón de
-                // detalles permite revisar todas las ventas a crédito y sus
-                // operaciones para este cliente.
+                // Si el usuario es administrador, ofrece un botón para eliminar al cliente.  De lo
+                // contrario, oculta la opción de eliminación.  Esto mantiene la consistencia
+                // con la política de la aplicación de que sólo los administradores pueden
+                // realizar operaciones destructivas sobre los datos maestros.
+                const deleteBtnHtml = (typeof userRole !== 'undefined' && userRole === 'admin')
+                    ? `<button data-id="${c.id}" class="delete-client-btn btn btn-danger text-xs">Eliminar</button>`
+                    : '';
                 row.innerHTML = `
                     <div>
                         <p class="font-semibold">${c.nombre}</p>
@@ -1111,6 +1115,7 @@
                         <button data-id="${c.id}" class="view-client-btn btn btn-secondary text-xs">Ver</button>
                         <button data-id="${c.id}" class="edit-client-btn btn btn-secondary text-xs">Editar</button>
                         <button data-id="${c.id}" class="pay-client-btn btn btn-primary text-xs">Abonar</button>
+                        ${deleteBtnHtml}
                     </div>
                 `;
                 container.appendChild(row);
@@ -1127,6 +1132,11 @@
             container.querySelectorAll('.pay-client-btn').forEach(btn => btn.addEventListener('click', e => {
                 const id = e.currentTarget.dataset.id;
                 openClientPayment(id);
+            }));
+            // Asigna eventos para eliminar clientes si existen botones de eliminación
+            container.querySelectorAll('.delete-client-btn').forEach(btn => btn.addEventListener('click', async e => {
+                const id = e.currentTarget.dataset.id;
+                await deleteClient(id);
             }));
         }
 
@@ -1551,8 +1561,8 @@
                 const payFilter = paymentSelect.value || '';
                 // Cierra el modal de opciones antes de generar el resumen
                 closeModal();
-                // Genera el resumen en una nueva ventana como en la versión original
-                exportSalesSummaryCustom(days, payFilter);
+                // Muestra el resumen en la página dedicada en lugar de abrir una ventana emergente
+                showSalesSummarySection(days, payFilter);
             });
             openModal('summary-options-modal');
         }
@@ -2001,6 +2011,42 @@
         }
 
         /**
+         * Elimina un cliente de la base de datos.  Esta operación sólo
+         * está permitida para administradores.  Tras eliminar el registro
+         * en Supabase, se actualiza la lista de clientes en memoria y se
+         * vuelve a renderizar la vista.  Si el cliente tiene ventas
+         * asociadas, las referencias se establecerán en null (según la
+         * definición de la tabla) y los pagos de crédito se eliminarán
+         * automáticamente gracias a las restricciones ON DELETE.
+         *
+         * @param {string} clientId Identificador del cliente a eliminar.
+         */
+        async function deleteClient(clientId) {
+            try {
+                // Verificación de rol: sólo los administradores pueden eliminar clientes
+                if (typeof userRole !== 'undefined' && userRole !== 'admin') {
+                    showToast('Sólo los administradores pueden eliminar clientes.');
+                    return;
+                }
+                const confirmDel = confirm('¿Seguro que deseas eliminar este cliente? Esta acción no se puede deshacer.');
+                if (!confirmDel) return;
+                const { error } = await supabaseClient.from('clientes').delete().eq('id', clientId);
+                if (error) {
+                    console.error(error);
+                    showToast('Error al eliminar cliente: ' + error.message);
+                    return;
+                }
+                // Actualiza el arreglo global de clientes y vuelve a renderizar
+                clients = (clients || []).filter(c => c.id !== clientId);
+                showToast('Cliente eliminado.');
+                renderClientsList();
+            } catch (err) {
+                console.error(err);
+                showToast('No se pudo eliminar el cliente.');
+            }
+        }
+
+        /**
          * Muestra una de las secciones principales (catálogo, resumen o ventas)
          * ocultando las demás.  Esto evita la superposición de modales
          * utilizando páginas dedicadas para el resumen y la gestión.
@@ -2030,6 +2076,8 @@
                 showToast('Debes iniciar sesión para ver el resumen.');
                 return;
             }
+            // Asegura que cualquier modal y overlay queden cerrados antes de mostrar la sección
+            closeModal();
             const startDate = new Date();
             startDate.setHours(0, 0, 0, 0);
             startDate.setDate(startDate.getDate() - (days - 1));
@@ -2139,6 +2187,8 @@
                 showToast('Debes iniciar sesión para ver las ventas.');
                 return;
             }
+            // Asegura que cualquier modal u overlay anterior esté cerrado
+            closeModal();
             try {
                 const contentEl = document.getElementById('sales-management-section-content');
                 const paySelect = document.getElementById('sales-page-filter-payment');
@@ -2679,9 +2729,11 @@
             const btnManageSales = document.getElementById('btn-manage-sales');
             if (btnManageSales) {
                 btnManageSales.addEventListener('click', () => {
-                    // Cierra el carrito y abre una nueva ventana con el historial de ventas
+                    // Cierra el carrito y muestra la sección de gestión de ventas
                     closeCartDrawer();
-                    setTimeout(() => openSalesManagementWindow(), 200);
+                    setTimeout(() => {
+                        showSalesManagementSection();
+                    }, 200);
                 });
             }
 
