@@ -1335,7 +1335,11 @@
                         paymentsHtml += `<li>${date}: ${formatCurrency(pay.monto_pagado)} / ${formatCurrency(pay.monto_pagado * rate, 'BS')}</li>`;
                     });
                     const saldoBs = sale.saldo_restante * rate;
-                    const status = (sale.saldo_restante && sale.saldo_restante > 0) ? 'pending' : 'paid';
+                    // Determina el estado de la venta.  Utilizamos Number() para
+                    // convertir a número y evitar que cadenas "0" se evalúen como
+                    // truthy.  Si el saldo restante es mayor que cero, la venta
+                    // está pendiente; de lo contrario se considera pagada.
+                    const status = (Number(sale.saldo_restante) > 0) ? 'pending' : 'paid';
                     const canDelete = (userRole === 'admin');
                     const deleteBtn = canDelete ? `<button data-sale-id="${sale.id}" data-client-id="${clientId}" class="delete-sale-btn btn btn-danger text-xs ml-2">Anular</button>` : '';
                     const saleHtml = `
@@ -1410,6 +1414,8 @@
                 // Asigna el selector de filtro
                 const filterSelect = document.getElementById('client-details-filter');
                 if (filterSelect) {
+                    // Restablece el selector al valor por defecto ('all') cada vez que se abre el modal
+                    filterSelect.value = 'all';
                     filterSelect.onchange = null;
                     filterSelect.addEventListener('change', e => {
                         const val = e.target.value;
@@ -1540,8 +1546,10 @@
             confirmBtn.addEventListener('click', () => {
                 const days = parseInt(daysSelect.value, 10);
                 const payFilter = paymentSelect.value || '';
-                closeModal(); // cierra el modal activo
-                exportSalesSummaryCustom(days, payFilter);
+                // Cierra el modal de opciones antes de generar el resumen
+                closeModal();
+                // Genera y muestra el resumen dentro de su propio modal
+                openSalesSummaryModal(days, payFilter);
             });
             openModal('summary-options-modal');
         }
@@ -1847,6 +1855,144 @@
             if (args.length > 0 && typeof args[0] !== 'undefined' && args[0] !== null) {
                 days = parseInt(args[0], 10);
             }
+
+        /**
+         * Genera un resumen de ventas dentro de un modal.  A diferencia de
+         * exportSalesSummaryCustom(), este método muestra los resultados
+         * en la interfaz en lugar de abrir una nueva ventana, lo que
+         * proporciona una experiencia más fluida y evita problemas con
+         * ventanas emergentes bloqueadas.
+         *
+         * @param {number} days Número de días hacia atrás desde hoy para el
+         *    periodo del resumen (1, 7, 15, 30).
+         * @param {string} paymentFilter Cadena opcional con el nombre del
+         *    método de pago (por ejemplo "efectivo_usd", "zelle").
+         */
+        async function openSalesSummaryModal(days = 1, paymentFilter = '') {
+            if (!session) {
+                showToast('Debes iniciar sesión para ver el resumen.');
+                return;
+            }
+            // Determinar fecha de inicio
+            const startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            startDate.setDate(startDate.getDate() - (days - 1));
+            try {
+                const { data: sales, error } = await supabaseClient
+                    .from('ventas')
+                    .select('*, venta_items(*, productos(name))')
+                    .gte('created_at', startDate.toISOString())
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (!sales || sales.length === 0) {
+                    showToast('No hay ventas registradas en el periodo seleccionado.');
+                    return;
+                }
+                let filteredSales = sales;
+                const normalizedFilter = (paymentFilter || '').toLowerCase();
+                if (normalizedFilter) {
+                    filteredSales = sales.filter(sale => {
+                        try {
+                            const methods = sale.payment_methods || {};
+                            return Object.keys(methods).some(key => key.toLowerCase().includes(normalizedFilter));
+                        } catch {
+                            return false;
+                        }
+                    });
+                    if (filteredSales.length === 0) {
+                        showToast('No hay ventas para el tipo de pago seleccionado.');
+                        return;
+                    }
+                }
+                let totalUSD = 0;
+                let totalBs = 0;
+                let rowsHtml = '';
+                filteredSales.forEach(sale => {
+                    totalUSD += sale.total_usd;
+                    totalBs += sale.total_usd * (sale.exchange_rate || window.exchangeRate);
+                    (sale.venta_items || []).forEach(item => {
+                        const productName = item.productos ? item.productos.name : 'Producto Eliminado';
+                        const priceUSD = item.price;
+                        const rate = sale.exchange_rate || window.exchangeRate;
+                        const priceBs = priceUSD * rate;
+                        const subUSD = item.quantity * priceUSD;
+                        const subBs = subUSD * rate;
+                        rowsHtml += `
+                            <tr>
+                                <td>${new Date(sale.created_at).toLocaleString('es-VE')}</td>
+                                <td>${productName}</td>
+                                <td class="text-right">${item.quantity}</td>
+                                <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
+                                <td class="text-right">${formatCurrency(subUSD)}</td>
+                                <td class="text-right">${formatCurrency(subBs, 'BS')}</td>
+                            </tr>
+                        `;
+                    });
+                });
+                // Construir tabla y título
+                const endDate = new Date();
+                const rangeLabel = `${startDate.toLocaleDateString('es-VE')} – ${endDate.toLocaleDateString('es-VE')}`;
+                const tableHtml = `
+                    <table class="w-full text-sm border-collapse">
+                        <thead>
+                            <tr>
+                                <th>Fecha y Hora</th>
+                                <th>Producto</th>
+                                <th class="text-right">Cantidad</th>
+                                <th class="text-right">Precio USD</th>
+                                <th class="text-right">Precio Bs</th>
+                                <th class="text-right">Subtotal USD</th>
+                                <th class="text-right">Subtotal Bs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml}
+                            <tr class="total-row">
+                                <td colspan="6">TOTAL PERIODO (USD)</td>
+                                <td class="text-right">${formatCurrency(totalUSD)}</td>
+                            </tr>
+                            <tr class="total-row">
+                                <td colspan="6">TOTAL PERIODO (Bs)</td>
+                                <td class="text-right">${formatCurrency(totalBs, 'BS')}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                `;
+                // Actualizar título y contenido del modal
+                const titleEl = document.getElementById('sales-summary-title');
+                const contentEl = document.getElementById('sales-summary-content');
+                if (titleEl) {
+                    titleEl.innerHTML = `Resumen de Ventas<br><span class="text-sm font-normal">${rangeLabel}${paymentFilter ? ' • ' + paymentFilter : ''}</span>`;
+                }
+                if (contentEl) {
+                    contentEl.innerHTML = tableHtml;
+                }
+                // Guardar html completo para imprimir
+                const printableHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen de Ventas</title>
+                    <style>body{font-family:sans-serif;margin:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}th{background-color:#f2f2f2;} .text-right{text-align:right;} .total-row{font-weight:bold;background-color:#f9f9f9;}</style>
+                    </head><body><h1>Resumen de Ventas</h1><h2>${rangeLabel}</h2>${paymentFilter ? `<p><strong>Tipo de pago:</strong> ${paymentFilter}</p>` : ''}${tableHtml}</body></html>`;
+                // Asignar evento de impresión
+                const printBtn = document.getElementById('print-sales-summary-btn');
+                if (printBtn) {
+                    printBtn.onclick = () => {
+                        const win = window.open('', '_blank');
+                        if (!win) {
+                            showToast('No se pudo abrir la ventana de impresión.');
+                            return;
+                        }
+                        win.document.write(printableHtml);
+                        win.document.close();
+                        win.print();
+                    };
+                }
+                // Mostrar el modal
+                openModal('sales-summary-modal');
+            } catch (err) {
+                console.error(err);
+                showToast('Error al generar el resumen.');
+            }
+        }
             if (args.length > 1 && typeof args[1] !== 'undefined' && args[1] !== null) {
                 paymentFilter = String(args[1]).trim().toLowerCase();
             }
@@ -2230,7 +2376,12 @@
             // Gestionar ventas
             const btnManageSales = document.getElementById('btn-manage-sales');
             if (btnManageSales) {
-                btnManageSales.addEventListener('click', openSalesManagementModal);
+                btnManageSales.addEventListener('click', () => {
+                    // Cierra el carrito si está abierto para evitar que el fondo quede borroso
+                    closeCartDrawer();
+                    // Abre el panel de ventas tras un pequeño retraso
+                    setTimeout(() => openSalesManagementModal(), 200);
+                });
             }
 
             // Botón para abrir venta a crédito
@@ -2610,7 +2761,15 @@
                 }
                 closeCartDrawer();
             });
-                document.getElementById('btn-summary').addEventListener('click', () => { openSummaryOptionsModal(); closeCartDrawer(); });
+                const summaryButtonEl = document.getElementById('btn-summary');
+                if (summaryButtonEl) {
+                    summaryButtonEl.addEventListener('click', () => {
+                        // Primero cierra el carrito para evitar interferencias con el modal
+                        closeCartDrawer();
+                        // Abre el modal de opciones tras un breve retraso para asegurar que el drawer se haya ocultado
+                        setTimeout(() => openSummaryOptionsModal(), 200);
+                    });
+                }
             // El botón de análisis de ventas ha sido eliminado porque no hay API de IA disponible.
             // Igualmente, se ha eliminado la generación de descripciones automática.
 

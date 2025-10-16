@@ -538,6 +538,25 @@
             </div>
         </div>
 
+        <!-- Modal para mostrar el resumen de ventas generado -->
+        <div id="sales-summary-modal" class="modal-content hidden">
+            <div class="p-6 rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="sales-summary-title" class="text-2xl font-bold">Resumen de Ventas</h3>
+                    <button type="button" class="btn-close-modal p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="sales-summary-content" class="flex-grow overflow-y-auto">
+                    <!-- El resumen generado se insertará aquí como tabla -->
+                </div>
+                <div class="mt-4 text-right space-x-2">
+                    <button type="button" id="print-sales-summary-btn" class="btn btn-secondary">Imprimir</button>
+                    <button type="button" class="btn-close-modal btn btn-secondary">Cerrar</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal para gestionar ventas: muestra el historial con filtros y opciones para anular -->
         <div id="sales-management-modal" class="modal-content hidden">
             <div class="p-6 rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
