@@ -2033,8 +2033,9 @@
          */
         async function deleteClient(clientId) {
             try {
-                // Verificación de rol: sólo los administradores pueden eliminar clientes
-                if (typeof userRole !== 'undefined' && userRole !== 'admin') {
+                // Asegúrate de tener el rol actualizado antes de validar permisos
+                await fetchUserRole();
+                if (userRole !== 'admin') {
                     showToast('Sólo los administradores pueden eliminar clientes.');
                     return;
                 }
@@ -2046,10 +2047,9 @@
                     showToast('Error al eliminar cliente: ' + error.message);
                     return;
                 }
-                // Actualiza el arreglo global de clientes y vuelve a renderizar
-                clients = (clients || []).filter(c => c.id !== clientId);
                 showToast('Cliente eliminado.');
-                renderClientsList();
+                // Recargar la lista desde la base de datos para reflejar el cambio
+                await openClientsModal();
             } catch (err) {
                 console.error(err);
                 showToast('No se pudo eliminar el cliente.');
