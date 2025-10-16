@@ -1422,6 +1422,8 @@
                         renderClientSales(val);
                     });
                 }
+                // Cierra cualquier modal anterior antes de abrir detalles, para evitar superposiciones de fondo difuminado
+                closeModal();
                 openModal('client-details-modal');
             } catch (err) {
                 console.error(err);
@@ -1570,6 +1572,8 @@
                     showToast('No se encontró la interfaz de gestión de ventas.');
                     return;
                 }
+                // Cierra cualquier modal abierto antes de abrir la gestión de ventas
+                closeModal();
                 // Mostrar inmediatamente el modal para que el usuario vea la pantalla en lugar de un fondo difuminado sin contenido
                 openModal('sales-management-modal');
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">Cargando...</td></tr>';
@@ -1986,7 +1990,8 @@
                         win.print();
                     };
                 }
-                // Mostrar el modal
+                // Mostrar el modal: cierra cualquier otro modal abierto antes de abrir el resumen
+                closeModal();
                 openModal('sales-summary-modal');
             } catch (err) {
                 console.error(err);
