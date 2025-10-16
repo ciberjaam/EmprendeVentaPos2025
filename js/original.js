@@ -414,7 +414,8 @@
             if (!modalContent) return;
             DOM.modalContainer.querySelectorAll('.modal-content').forEach(mc => mc.classList.add('hidden'));
             modalContent.classList.remove('hidden');
-            DOM.modalContainer.className = 'modal-overlay-bg fixed inset-0 flex items-center justify-center z-30';
+            // Aseguramos que el overlay siempre tenga la mayor prioridad visual (z-50) para que no quede debajo de otros elementos como el carrito.
+            DOM.modalContainer.className = 'modal-overlay-bg fixed inset-0 flex items-center justify-center z-50';
             currentModal = modalId;
         }
 
