@@ -1551,8 +1551,8 @@
                 const payFilter = paymentSelect.value || '';
                 // Cierra el modal de opciones antes de generar el resumen
                 closeModal();
-                // Muestra el resumen en la sección dedicada
-                showSalesSummarySection(days, payFilter);
+                // Genera el resumen en una nueva ventana como en la versión original
+                exportSalesSummaryCustom(days, payFilter);
             });
             openModal('summary-options-modal');
         }
@@ -2236,6 +2236,65 @@
                 showToast('Error al cargar ventas.');
             }
         }
+
+        /**
+         * Abre una nueva ventana con el historial de ventas.  Este método
+         * genera un informe similar al de la sección de gestión pero sin
+         * superposiciones ni modales, permitiendo al administrador ver
+         * rápidamente todas las ventas y anularlas utilizando la función
+         * deleteSale() del origen.
+         */
+        async function openSalesManagementWindow() {
+            if (!session) {
+                showToast('Debes iniciar sesión para ver las ventas.');
+                return;
+            }
+            try {
+                const { data: sales, error } = await supabaseClient
+                    .from('ventas')
+                    .select('id, created_at, total_usd, exchange_rate, saldo_restante, payment_methods, cliente_id, clientes(nombre)')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (!sales || sales.length === 0) {
+                    showToast('No hay ventas registradas.');
+                    return;
+                }
+                // Construir filas de la tabla
+                let rows = '';
+                sales.forEach(sale => {
+                    const rate = sale.exchange_rate || window.exchangeRate;
+                    const totalBs = (sale.total_usd || 0) * rate;
+                    const methods = sale.payment_methods ? Object.keys(sale.payment_methods).join(', ') : '';
+                    const status = Number(sale.saldo_restante) > 0 ? 'Pendiente' : 'Pagada';
+                    const clientName = sale.clientes ? sale.clientes.nombre : 'N/A';
+                    const deleteBtn = (userRole === 'admin') ? `<button onclick="if(confirm('¿Seguro que deseas anular esta venta?')){ opener.deleteSale('${sale.id}', '${sale.cliente_id}'); this.disabled = true; this.textContent='Anulada'; }" class="btn btn-danger btn-xs">Anular</button>` : '';
+                    rows += `
+                        <tr>
+                            <td>${new Date(sale.created_at).toLocaleString('es-VE')}</td>
+                            <td>${clientName}</td>
+                            <td style="text-align:right">${formatCurrency(sale.total_usd)}</td>
+                            <td style="text-align:right">${formatCurrency(totalBs, 'BS')}</td>
+                            <td>${methods || '-'}</td>
+                            <td>${status}</td>
+                            <td>${deleteBtn}</td>
+                        </tr>
+                    `;
+                });
+                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Historial de Ventas</title>
+                    <style>body{font-family:sans-serif;margin:20px;} table{width:100%;border-collapse:collapse;margin-top:20px;} th,td{border:1px solid #ddd;padding:8px;} th{background-color:#f2f2f2;text-align:left;} .btn{padding:4px 8px;font-size:12px;border:none;border-radius:4px;cursor:pointer;} .btn-danger{background-color:#dc2626;color:#fff;} </style>
+                    </head><body><h1>Historial de Ventas</h1><table><thead><tr><th>Fecha y Hora</th><th>Cliente</th><th>Total USD</th><th>Total Bs</th><th>Método(s)</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+                const win = window.open('', '_blank');
+                if (!win) {
+                    showToast('No se pudo abrir la ventana de ventas.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+            } catch (err) {
+                console.error(err);
+                showToast('Error al cargar ventas.');
+            }
+        }
             if (args.length > 1 && typeof args[1] !== 'undefined' && args[1] !== null) {
                 paymentFilter = String(args[1]).trim().toLowerCase();
             }
@@ -2620,9 +2679,9 @@
             const btnManageSales = document.getElementById('btn-manage-sales');
             if (btnManageSales) {
                 btnManageSales.addEventListener('click', () => {
-                    // Cierra el carrito y muestra la página de ventas.  No se utiliza modal para evitar superposiciones.
+                    // Cierra el carrito y abre una nueva ventana con el historial de ventas
                     closeCartDrawer();
-                    setTimeout(() => showSalesManagementSection(), 200);
+                    setTimeout(() => openSalesManagementWindow(), 200);
                 });
             }
 
