@@ -163,7 +163,8 @@
             </div>
         </header>
 
-        <main class="p-4">
+        <!-- Sección principal de catálogo.  Se marca con un id para poder alternar la vista entre el catálogo y otras páginas (resumen, gestión de ventas). -->
+        <main id="catalog-section" class="p-4">
             <div class="flex justify-between items-center mb-4 flex-wrap gap-4">
                 <h2 class="text-2xl font-bold">Catálogo</h2>
                 <div class="flex items-center gap-2 flex-wrap">
@@ -611,6 +612,46 @@
             </div>
         </div>
     
+        <!-- Página de resumen de ventas (sin modal). Se muestra en lugar del catálogo cuando se selecciona una opción de resumen. -->
+        <section id="sales-summary-section" class="hidden p-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold">Resumen de Ventas</h3>
+                <button id="back-to-catalog-from-summary" class="btn btn-secondary">Volver</button>
+            </div>
+            <div id="sales-summary-section-content" class="overflow-y-auto"></div>
+        </section>
+
+        <!-- Página de gestión de ventas (sin modal). -->
+        <section id="sales-management-section" class="hidden p-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold">Gestionar Ventas</h3>
+                <button id="back-to-catalog-from-management" class="btn btn-secondary">Volver</button>
+            </div>
+            <!-- Filtros para método de pago y estado en la página de ventas -->
+            <div class="flex flex-wrap gap-4 mb-4">
+                <div>
+                    <label for="sales-page-filter-payment" class="text-sm block mb-1">Método de pago</label>
+                    <select id="sales-page-filter-payment" class="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1">
+                        <option value="">Todos</option>
+                        <option value="efectivo_usd">Efectivo USD</option>
+                        <option value="efectivo_bs">Efectivo Bs</option>
+                        <option value="zelle">Zelle</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="pago_movil">Pago Móvil</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="sales-page-filter-status" class="text-sm block mb-1">Estado</label>
+                    <select id="sales-page-filter-status" class="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1">
+                        <option value="all">Todos</option>
+                        <option value="pending">Pendientes</option>
+                        <option value="paid">Pagadas</option>
+                    </select>
+                </div>
+            </div>
+            <div id="sales-management-section-content" class="overflow-y-auto"></div>
+        </section>
+
     <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 max-w-md text-center">
          <p id="toast-message"></p>
     </div>

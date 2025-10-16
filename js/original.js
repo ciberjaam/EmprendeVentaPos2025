@@ -1551,8 +1551,8 @@
                 const payFilter = paymentSelect.value || '';
                 // Cierra el modal de opciones antes de generar el resumen
                 closeModal();
-                // Genera y muestra el resumen dentro de su propio modal
-                openSalesSummaryModal(days, payFilter);
+                // Muestra el resumen en la sección dedicada
+                showSalesSummarySection(days, payFilter);
             });
             openModal('summary-options-modal');
         }
@@ -1999,6 +1999,243 @@
                 showToast('Error al generar el resumen.');
             }
         }
+
+        /**
+         * Muestra una de las secciones principales (catálogo, resumen o ventas)
+         * ocultando las demás.  Esto evita la superposición de modales
+         * utilizando páginas dedicadas para el resumen y la gestión.
+         *
+         * @param {string} sectionId Id de la sección que se quiere mostrar.
+         */
+        function showSection(sectionId) {
+            // Lista de todas las secciones que pueden alternar
+            const sections = ['catalog-section', 'sales-summary-section', 'sales-management-section'];
+            sections.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+            const showEl = document.getElementById(sectionId);
+            if (showEl) showEl.classList.remove('hidden');
+        }
+
+        /**
+         * Genera y muestra el resumen de ventas dentro de la sección dedicada.
+         * Utiliza la misma lógica que openSalesSummaryModal pero sin modales.
+         *
+         * @param {number} days Número de días para el periodo.
+         * @param {string} paymentFilter Filtro de método de pago.
+         */
+        async function showSalesSummarySection(days = 1, paymentFilter = '') {
+            if (!session) {
+                showToast('Debes iniciar sesión para ver el resumen.');
+                return;
+            }
+            const startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            startDate.setDate(startDate.getDate() - (days - 1));
+            try {
+                const { data: sales, error } = await supabaseClient
+                    .from('ventas')
+                    .select('*, venta_items(*, productos(name))')
+                    .gte('created_at', startDate.toISOString())
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (!sales || sales.length === 0) {
+                    showToast('No hay ventas registradas en el periodo seleccionado.');
+                    return;
+                }
+                let filteredSales = sales;
+                const normalizedFilter = (paymentFilter || '').toLowerCase();
+                if (normalizedFilter) {
+                    filteredSales = sales.filter(sale => {
+                        try {
+                            const methods = sale.payment_methods || {};
+                            return Object.keys(methods).some(key => key.toLowerCase().includes(normalizedFilter));
+                        } catch {
+                            return false;
+                        }
+                    });
+                    if (filteredSales.length === 0) {
+                        showToast('No hay ventas para el tipo de pago seleccionado.');
+                        return;
+                    }
+                }
+                let totalUSD = 0;
+                let totalBs = 0;
+                let rowsHtml = '';
+                filteredSales.forEach(sale => {
+                    totalUSD += sale.total_usd;
+                    totalBs += sale.total_usd * (sale.exchange_rate || window.exchangeRate);
+                    (sale.venta_items || []).forEach(item => {
+                        const productName = item.productos ? item.productos.name : 'Producto Eliminado';
+                        const priceUSD = item.price;
+                        const rate = sale.exchange_rate || window.exchangeRate;
+                        const priceBs = priceUSD * rate;
+                        const subUSD = item.quantity * priceUSD;
+                        const subBs = subUSD * rate;
+                        rowsHtml += `
+                            <tr>
+                                <td>${new Date(sale.created_at).toLocaleString('es-VE')}</td>
+                                <td>${productName}</td>
+                                <td class="text-right">${item.quantity}</td>
+                                <td class="text-right">${formatCurrency(priceUSD)}</td>
+                                <td class="text-right">${formatCurrency(priceBs, 'BS')}</td>
+                                <td class="text-right">${formatCurrency(subUSD)}</td>
+                                <td class="text-right">${formatCurrency(subBs, 'BS')}</td>
+                            </tr>
+                        `;
+                    });
+                });
+                const endDate = new Date();
+                const rangeLabel = `${startDate.toLocaleDateString('es-VE')} – ${endDate.toLocaleDateString('es-VE')}`;
+                const tableHtml = `
+                    <table class="w-full text-sm border-collapse">
+                        <thead>
+                            <tr>
+                                <th>Fecha y Hora</th>
+                                <th>Producto</th>
+                                <th class="text-right">Cantidad</th>
+                                <th class="text-right">Precio USD</th>
+                                <th class="text-right">Precio Bs</th>
+                                <th class="text-right">Subtotal USD</th>
+                                <th class="text-right">Subtotal Bs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml}
+                            <tr class="total-row">
+                                <td colspan="6">TOTAL PERIODO (USD)</td>
+                                <td class="text-right">${formatCurrency(totalUSD)}</td>
+                            </tr>
+                            <tr class="total-row">
+                                <td colspan="6">TOTAL PERIODO (Bs)</td>
+                                <td class="text-right">${formatCurrency(totalBs, 'BS')}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                `;
+                // Insertar la tabla en la sección
+                const contentEl = document.getElementById('sales-summary-section-content');
+                if (contentEl) {
+                    contentEl.innerHTML = `
+                        <h4 class="text-lg font-semibold mb-2">${rangeLabel}${paymentFilter ? ' • ' + paymentFilter : ''}</h4>
+                        ${tableHtml}
+                    `;
+                }
+                // Cambiar a la vista de resumen
+                showSection('sales-summary-section');
+            } catch (err) {
+                console.error(err);
+                showToast('Error al generar el resumen.');
+            }
+        }
+
+        /**
+         * Carga y muestra el historial de ventas en la sección dedicada.
+         * Aplica filtros por método de pago y estado a nivel de página.
+         */
+        async function showSalesManagementSection() {
+            if (!session) {
+                showToast('Debes iniciar sesión para ver las ventas.');
+                return;
+            }
+            try {
+                const contentEl = document.getElementById('sales-management-section-content');
+                const paySelect = document.getElementById('sales-page-filter-payment');
+                const statusSelect = document.getElementById('sales-page-filter-status');
+                if (!contentEl || !paySelect || !statusSelect) {
+                    showToast('No se encontró la interfaz de ventas.');
+                    return;
+                }
+                contentEl.innerHTML = '<p class="text-center">Cargando...</p>';
+                const { data: sales, error } = await supabaseClient
+                    .from('ventas')
+                    .select('id, created_at, total_usd, exchange_rate, saldo_restante, payment_methods, cliente_id, clientes(nombre)')
+                    .order('created_at', { ascending: false });
+                if (error) {
+                    console.error(error);
+                    contentEl.innerHTML = '<p class="text-center text-red-600">Error al cargar ventas.</p>';
+                    return;
+                }
+                if (!sales || sales.length === 0) {
+                    contentEl.innerHTML = '<p class="text-center">No hay ventas registradas.</p>';
+                    showSection('sales-management-section');
+                    return;
+                }
+                // Preparar arreglo de ventas con datos calculados
+                const allSales = sales.map(sale => {
+                    const rate = sale.exchange_rate || window.exchangeRate;
+                    const totalBs = (sale.total_usd || 0) * rate;
+                    const methods = sale.payment_methods ? Object.keys(sale.payment_methods).join(', ') : '';
+                    const status = Number(sale.saldo_restante) > 0 ? 'pending' : 'paid';
+                    const clientName = sale.clientes ? sale.clientes.nombre : 'N/A';
+                    return {
+                        id: sale.id,
+                        date: new Date(sale.created_at).toLocaleString('es-VE'),
+                        totalUSD: sale.total_usd || 0,
+                        totalBs: totalBs,
+                        methods: methods,
+                        status: status,
+                        clientId: sale.cliente_id,
+                        clientName: clientName,
+                        saldoRestante: sale.saldo_restante || 0
+                    };
+                });
+                // Función de renderizado
+                const render = () => {
+                    const filterPay = (paySelect.value || '').toLowerCase();
+                    const filterStatus = statusSelect.value;
+                    let html = '<table class="w-full text-sm border-collapse"><thead><tr><th>Fecha y Hora</th><th>Cliente</th><th class="text-right">Total USD</th><th class="text-right">Total Bs</th><th>Método(s)</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
+                    let hasRows = false;
+                    allSales.forEach(sale => {
+                        if (filterPay && !sale.methods.toLowerCase().includes(filterPay)) return;
+                        if (filterStatus !== 'all' && sale.status !== filterStatus) return;
+                        hasRows = true;
+                        const statusLabel = sale.status === 'pending' ? 'Pendiente' : 'Pagada';
+                        const deleteButton = (userRole === 'admin') ? `<button data-sale-id="${sale.id}" data-client-id="${sale.clientId}" class="delete-sale-btn btn btn-danger btn-xs">Anular</button>` : '';
+                        html += `
+                            <tr>
+                                <td>${sale.date}</td>
+                                <td>${sale.clientName}</td>
+                                <td class="text-right">${formatCurrency(sale.totalUSD)}</td>
+                                <td class="text-right">${formatCurrency(sale.totalBs, 'BS')}</td>
+                                <td>${sale.methods || '-'}</td>
+                                <td>${statusLabel}</td>
+                                <td>${deleteButton}</td>
+                            </tr>
+                        `;
+                    });
+                    if (!hasRows) {
+                        html += '<tr><td colspan="7" class="text-center py-4">No hay ventas que coincidan con el filtro.</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                    contentEl.innerHTML = html;
+                    // Asignar eventos a los botones de anular
+                    contentEl.querySelectorAll('.delete-sale-btn').forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            const saleId = e.currentTarget.dataset.saleId;
+                            const clientId = e.currentTarget.dataset.clientId;
+                            await deleteSale(saleId, clientId);
+                            // Eliminar de allSales y volver a renderizar
+                            const idx = allSales.findIndex(s => s.id === saleId);
+                            if (idx > -1) allSales.splice(idx, 1);
+                            render();
+                        });
+                    });
+                };
+                // Asociar filtros
+                paySelect.onchange = null;
+                statusSelect.onchange = null;
+                paySelect.addEventListener('change', render);
+                statusSelect.addEventListener('change', render);
+                // Render inicial
+                render();
+                showSection('sales-management-section');
+            } catch (err) {
+                console.error(err);
+                showToast('Error al cargar ventas.');
+            }
+        }
             if (args.length > 1 && typeof args[1] !== 'undefined' && args[1] !== null) {
                 paymentFilter = String(args[1]).trim().toLowerCase();
             }
@@ -2383,10 +2620,23 @@
             const btnManageSales = document.getElementById('btn-manage-sales');
             if (btnManageSales) {
                 btnManageSales.addEventListener('click', () => {
-                    // Cierra el carrito si está abierto para evitar que el fondo quede borroso
+                    // Cierra el carrito y muestra la página de ventas.  No se utiliza modal para evitar superposiciones.
                     closeCartDrawer();
-                    // Abre el panel de ventas tras un pequeño retraso
-                    setTimeout(() => openSalesManagementModal(), 200);
+                    setTimeout(() => showSalesManagementSection(), 200);
+                });
+            }
+
+            // Botones para regresar al catálogo desde las páginas de resumen o ventas
+            const backFromSummary = document.getElementById('back-to-catalog-from-summary');
+            if (backFromSummary) {
+                backFromSummary.addEventListener('click', () => {
+                    showSection('catalog-section');
+                });
+            }
+            const backFromManagement = document.getElementById('back-to-catalog-from-management');
+            if (backFromManagement) {
+                backFromManagement.addEventListener('click', () => {
+                    showSection('catalog-section');
                 });
             }
 
