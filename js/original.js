@@ -2011,8 +2011,8 @@
                         win.print();
                     };
                 }
-                // Mostrar el modal: cierra cualquier otro modal abierto antes de abrir el resumen
-                closeModal();
+                // Mostrar el modal de resumen de ventas.  No cerramos modales aquí porque
+                // el modal de opciones ya fue cerrado antes de llamar a esta función.
                 openModal('sales-summary-modal');
             } catch (err) {
                 console.error(err);
@@ -2039,7 +2039,7 @@
                     showToast('Sólo los administradores pueden eliminar clientes.');
                     return;
                 }
-                const confirmDel = confirm('¿Seguro que deseas eliminar este cliente? Esta acción no se puede deshacer.');
+                const confirmDel = await showConfirmation('¿Seguro que deseas eliminar este cliente? Esta acción no se puede deshacer.');
                 if (!confirmDel) return;
                 const { error } = await supabaseClient.from('clientes').delete().eq('id', clientId);
                 if (error) {
