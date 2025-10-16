@@ -412,9 +412,15 @@
         function openModal(modalId) {
             const modalContent = document.getElementById(modalId);
             if (!modalContent) return;
+            // Si el modal no es hijo del contenedor, muévelo dentro para que se muestre sobre el overlay.
+            if (!DOM.modalContainer.contains(modalContent)) {
+                DOM.modalContainer.appendChild(modalContent);
+            }
+            // Oculta cualquier otro modal contenido en el contenedor
             DOM.modalContainer.querySelectorAll('.modal-content').forEach(mc => mc.classList.add('hidden'));
+            // Muestra el modal solicitado
             modalContent.classList.remove('hidden');
-            // Aseguramos que el overlay siempre tenga la mayor prioridad visual (z-50) para que no quede debajo de otros elementos como el carrito.
+            // Aseguramos que el overlay siempre tenga la mayor prioridad visual (z-50)
             DOM.modalContainer.className = 'modal-overlay-bg fixed inset-0 flex items-center justify-center z-50';
             currentModal = modalId;
         }
