@@ -1151,6 +1151,10 @@
          * clientes desde Supabase y luego renderizando la lista en pantalla.
          */
         async function openClientsModal() {
+            // Obtiene el rol del usuario antes de cargar la lista, de modo
+            // que renderClientsList pueda mostrar u ocultar las opciones
+            // adecuadas (por ejemplo el botón de eliminar) según el rol.
+            await fetchUserRole();
             await fetchClients();
             renderClientsList();
             // Configura el filtro de búsqueda de clientes
@@ -1567,8 +1571,8 @@
                 const payFilter = paymentSelect.value || '';
                 // Cierra el modal de opciones antes de generar el resumen
                 closeModal();
-                // Muestra el resumen en la página dedicada en lugar de abrir una ventana emergente
-                showSalesSummarySection(days, payFilter);
+                // Genera el resumen dentro de un modal dedicado en lugar de una ventana emergente
+                openSalesSummaryModal(days, payFilter);
             });
             openModal('summary-options-modal');
         }
@@ -2735,10 +2739,12 @@
             const btnManageSales = document.getElementById('btn-manage-sales');
             if (btnManageSales) {
                 btnManageSales.addEventListener('click', () => {
-                    // Cierra el carrito y muestra la sección de gestión de ventas
+                    // Cierra el carrito y abre el modal de gestión de ventas.  Se
+                    // utiliza un modal dedicado para mantener la coherencia con
+                    // otras operaciones y evitar problemas de superposición.
                     closeCartDrawer();
                     setTimeout(() => {
-                        showSalesManagementSection();
+                        openSalesManagementModal();
                     }, 200);
                 });
             }
